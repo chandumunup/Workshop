@@ -1,0 +1,44 @@
+name: Terraform Apply (on push to main)
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    concurrency:
+      group: terraform-apply-${{ github.ref }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v2
+
+      - name: Locate Terraform directory
+        id: find
+        run: |
+          if [ -d "./terraform" ]; then echo "dir=terraform" >> $GITHUB_OUTPUT
+          elif [ -d "./infrastructure/terraform" ]; then echo "dir=infrastructure/terraform" >> $GITHUB_OUTPUT
+          elif ls *.tf 1> /dev/null 2>&1; then echo "dir=." >> $GITHUB_OUTPUT
+          else echo "dir=" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Terraform init
+        if: steps.find.outputs.dir != ''
+        working-directory: ${{ steps.find.outputs.dir }}
+        run: terraform init -input=false
+
+      - name: Terraform apply
+        if: steps.find.outputs.dir != ''
+        working-directory: ${{ steps.find.outputs.dir }}
+        env:
+          # Provider/backend credentials should be provided as repo secrets or environment variables
+          # e.g. AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, GOOGLE_CREDENTIALS, etc.
+        run: |
+          terraform apply -input=false -auto-approve
+
+      - name: No Terraform found
+        if: steps.find.outputs.dir == ''
+        run: echo "No Terraform configuration detected. Skipping apply." 

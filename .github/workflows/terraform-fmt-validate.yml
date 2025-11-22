@@ -1,0 +1,42 @@
+name: Terraform fmt and validate (on PRs)
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  fmt-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v2
+
+      - name: Locate Terraform directory
+        id: find
+        run: |
+          if [ -d "./terraform" ]; then echo "dir=terraform" >> $GITHUB_OUTPUT
+          elif [ -d "./infrastructure/terraform" ]; then echo "dir=infrastructure/terraform" >> $GITHUB_OUTPUT
+          elif ls *.tf 1> /dev/null 2>&1; then echo "dir=." >> $GITHUB_OUTPUT
+          else echo "dir=" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Terraform fmt (check)
+        if: steps.find.outputs.dir != ''
+        working-directory: ${{ steps.find.outputs.dir }}
+        run: terraform fmt -check -recursive
+
+      - name: Terraform init
+        if: steps.find.outputs.dir != ''
+        working-directory: ${{ steps.find.outputs.dir }}
+        run: terraform init -backend=false
+
+      - name: Terraform validate
+        if: steps.find.outputs.dir != ''
+        working-directory: ${{ steps.find.outputs.dir }}
+        run: terraform validate
+
+      - name: No Terraform found
+        if: steps.find.outputs.dir == ''
+        run: echo "No Terraform configuration detected in 'terraform' or 'infrastructure/terraform' or repository root. Skipping." 

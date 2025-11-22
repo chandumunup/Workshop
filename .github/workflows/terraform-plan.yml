@@ -1,0 +1,67 @@
+name: Terraform Plan (on PRs)
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v2
+
+      - name: Locate Terraform directory
+        id: find
+        run: |
+          if [ -d "./terraform" ]; then echo "dir=terraform" >> $GITHUB_OUTPUT
+          elif [ -d "./infrastructure/terraform" ]; then echo "dir=infrastructure/terraform" >> $GITHUB_OUTPUT
+          elif ls *.tf 1> /dev/null 2>&1; then echo "dir=." >> $GITHUB_OUTPUT
+          else echo "dir=" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Terraform init
+        if: steps.find.outputs.dir != ''
+        working-directory: ${{ steps.find.outputs.dir }}
+        run: terraform init -input=false
+
+      - name: Terraform plan
+        if: steps.find.outputs.dir != ''
+        working-directory: ${{ steps.find.outputs.dir }}
+        run: terraform plan -input=false -no-color -out=plan.tfplan || true
+
+      - name: Show plan and set output
+        if: steps.find.outputs.dir != ''
+        id: show
+        working-directory: ${{ steps.find.outputs.dir }}
+        run: |
+          terraform show -no-color plan.tfplan > plan.txt || true
+          echo "plan<<EOF" >> $GITHUB_OUTPUT
+          cat plan.txt >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Upload plan artifact
+        if: steps.find.outputs.dir != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: terraform-plan
+          path: ${{ steps.find.outputs.dir }}/plan.txt
+
+      - name: Comment on PR with plan summary
+        if: steps.find.outputs.dir != ''
+        uses: peter-evans/create-or-update-comment@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          issue-number: ${{ github.event.pull_request.number }}
+          body: |
+            Terraform plan for `${{ steps.find.outputs.dir }}` on commit `${{ github.sha }}`:
+
+            ```
+            ${{ steps.show.outputs.plan }}
+            ```
+
+      - name: No Terraform found
+        if: steps.find.outputs.dir == ''
+        run: echo "No Terraform configuration detected. Skipping plan." 
