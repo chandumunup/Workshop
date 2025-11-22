@@ -1,0 +1,112 @@
+name: CI/CD - Build, Push to GCR, Optional Helm Deploy
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+env:
+  IMAGE_TAG: ${{ github.sha }}
+
+jobs:
+  build-and-push:
+    name: Build artifacts and push images to GCR
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Node 18
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Set IMAGE_TAG
+        id: set-tag
+        run: echo "IMAGE_TAG=${{ env.IMAGE_TAG }}" && echo "IMAGE_TAG=${{ env.IMAGE_TAG }}" >> $GITHUB_ENV
+
+      - name: Authenticate to GCP
+        uses: google-github-actions/auth@v1
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Configure Docker to use gcloud credential helper
+        run: gcloud --quiet auth configure-docker
+
+      - name: Build order-service (Maven)
+        run: |
+          cd order-service
+          mvn -B -DskipTests package
+
+      - name: Build & push application-service image
+        run: |
+          docker build -t gcr.io/${{ secrets.GCP_PROJECT }}/application-service:${{ env.IMAGE_TAG }} application-service
+          docker push gcr.io/${{ secrets.GCP_PROJECT }}/application-service:${{ env.IMAGE_TAG }}
+
+      - name: Build & push patient-service image
+        run: |
+          docker build -t gcr.io/${{ secrets.GCP_PROJECT }}/patient-service:${{ env.IMAGE_TAG }} patient-service
+          docker push gcr.io/${{ secrets.GCP_PROJECT }}/patient-service:${{ env.IMAGE_TAG }}
+
+      - name: Build & push order-service image
+        run: |
+          docker build -t gcr.io/${{ secrets.GCP_PROJECT }}/order-service:${{ env.IMAGE_TAG }} order-service
+          docker push gcr.io/${{ secrets.GCP_PROJECT }}/order-service:${{ env.IMAGE_TAG }}
+
+      - name: Image summary
+        run: |
+          docker --version || true
+          echo "Pushed images with tag $IMAGE_TAG to gcr.io/${{ secrets.GCP_PROJECT }}"
+
+  deploy-to-gke:
+    name: Deploy to GKE with Helm (optional)
+    runs-on: ubuntu-latest
+    needs: build-and-push
+    if: ${{ secrets.GKE_CLUSTER && secrets.GCP_PROJECT && secrets.GKE_LOCATION }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Authenticate to GCP
+        uses: google-github-actions/auth@v1
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Get GKE credentials
+        uses: google-github-actions/get-gke-credentials@v1
+        with:
+          cluster_name: ${{ secrets.GKE_CLUSTER }}
+          location: ${{ secrets.GKE_LOCATION }}
+          project_id: ${{ secrets.GCP_PROJECT }}
+
+      - name: Install Helm
+        run: |
+          curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+
+      - name: Deploy application-service Helm chart
+        run: |
+          helm upgrade --install application-service helm-charts/application-service \
+            --namespace default --create-namespace \
+            --set image.repository=gcr.io/${{ secrets.GCP_PROJECT }}/application-service \
+            --set image.tag=${{ env.IMAGE_TAG }}
+
+      - name: Deploy patient-service Helm chart
+        run: |
+          helm upgrade --install patient-service helm-charts/patient-service \
+            --namespace default --create-namespace \
+            --set image.repository=gcr.io/${{ secrets.GCP_PROJECT }}/patient-service \
+            --set image.tag=${{ env.IMAGE_TAG }}
+
+      - name: Deploy order-service Helm chart
+        run: |
+          helm upgrade --install order-service helm-charts/order-service \
+            --namespace default --create-namespace \
+            --set image.repository=gcr.io/${{ secrets.GCP_PROJECT }}/order-service \
+            --set image.tag=${{ env.IMAGE_TAG }}

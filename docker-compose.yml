@@ -1,0 +1,20 @@
+version: "3.8"
+
+services:
+  application-service:
+    build: ./application-service
+    image: application-service:local
+    ports:
+      - "3001:3001"
+
+  patient-service:
+    build: ./patient-service
+    image: patient-service:local
+    ports:
+      - "3000:3000"
+
+  order-service:
+    build: ./order-service
+    image: order-service:local
+    ports:
+      - "8080:8080"

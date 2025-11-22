@@ -1,0 +1,17 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Docker: Compose Up (build)",
+      "type": "shell",
+      "command": "docker compose up --build",
+      "problemMatcher": []
+    },
+    {
+      "label": "Docker: Build All Images",
+      "type": "shell",
+      "command": "docker build -t application-service:local application-service && docker build -t patient-service:local patient-service && docker build -t order-service:local order-service",
+      "problemMatcher": []
+    }
+  ]
+}

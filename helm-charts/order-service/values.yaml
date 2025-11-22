@@ -1,0 +1,15 @@
+replicaCount: 1
+
+# For Artifact Registry use the pattern:
+#   <LOCATION>-docker.pkg.dev/<GCP_PROJECT>/<AR_REPOSITORY>/order-service
+# Example: us-central1-docker.pkg.dev/my-project/microservices-repo/order-service
+image:
+  repository: "REPLACE_WITH_ARTIFACT_REGISTRY/order-service"
+  tag: "latest"
+  pullPolicy: IfNotPresent
+
+service:
+  type: ClusterIP
+  port: 8080
+
+resources: {}
